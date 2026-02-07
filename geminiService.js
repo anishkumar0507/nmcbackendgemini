@@ -1,0 +1,168 @@
+import { VertexAI } from "@google-cloud/vertexai";
+
+/* ===============================
+   CONFIG
+================================ */
+const MODEL_NAME = "gemini-2.5-flash";
+
+const cleanJsonString = (text = "") => {
+  return text
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+};
+
+/* ===============================
+   PROMPT (VERY IMPORTANT)
+================================ */
+const buildCompliancePrompt = ({ inputType, category, analysisMode }) => {
+  return `
+You are Satark AI, a senior Indian regulatory compliance auditor.
+
+TASK:
+Audit the given ${inputType} content for Indian advertising & healthcare compliance.
+
+REGULATIONS:
+- Drugs and Magic Remedies Act, 1954 (Schedule J)
+- ASCI Code & Healthcare Guidelines 2024
+- Consumer Protection Act 2019
+- UCPMP 2024
+- IRDAI Advertising Norms (if applicable)
+
+CRITICAL OUTPUT RULES:
+- Return ONLY valid JSON
+- Do NOT repeat points
+- Do NOT restart numbering
+- Each recommendation must be ACTIONABLE and REPLACEMENT-BASED
+
+RECOMMENDATION STYLE (VERY IMPORTANT):
+❌ Wrong: "Remove misleading claim"
+✅ Correct:
+"Replace the sentence:
+  'This medicine cures diabetes permanently'
+ with:
+  'This product may help support diabetes management when used under medical supervision.'"
+
+FORMAT RULES:
+- suggestion: numbered points (1., 2., 3.)
+- solution: numbered points (1., 2., 3.)
+- Max 3 points per field
+- If only 1 point exists, return ONLY "1."
+
+JSON SCHEMA:
+{
+  "score": number,
+  "status": "Compliant" | "Needs Review" | "Non-Compliant",
+  "summary": string,
+  "transcription": string,
+  "financialPenalty": {
+    "riskLevel": "High" | "Medium" | "Low" | "None",
+    "description": string
+  },
+  "ethicalMarketing": {
+    "score": number,
+    "assessment": string
+  },
+  "violations": [
+    {
+      "severity": "Critical" | "High" | "Medium" | "Low",
+      "regulation": string,
+      "description": string,
+      "problematicContent": string,
+      "englishTranslation": string,
+      "suggestion": string,
+      "solution": string
+    }
+  ]
+}
+
+ANALYSIS MODE: ${analysisMode || "Standard"}
+
+Return JSON only.`;
+};
+
+/* ===============================
+   MAIN FUNCTION (EXPORTED)
+================================ */
+export const analyzeWithGemini = async ({
+  content,
+  inputType = "text",
+  category = "General",
+  analysisMode = "Standard",
+}) => {
+  if (!process.env.VERTEX_AI_PROJECT_ID) {
+    throw new Error("VERTEX_AI_PROJECT_ID missing");
+  }
+
+  const vertexAI = new VertexAI({
+    project: process.env.VERTEX_AI_PROJECT_ID,
+    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+  });
+
+  const model = vertexAI.getGenerativeModel({
+    model: MODEL_NAME,
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 8192,
+      topP: 0.95,
+    },
+  });
+
+  const prompt = buildCompliancePrompt({
+    inputType,
+    category,
+    analysisMode,
+  });
+
+  const parts = [
+    { text: content },
+    { text: prompt },
+  ];
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts }],
+  });
+
+  let rawText =
+    result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+
+  if (!rawText) {
+    throw new Error("Gemini returned empty response");
+  }
+
+  const cleaned = cleanJsonString(rawText);
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error("❌ RAW GEMINI OUTPUT:\n", cleaned);
+    throw new Error("Gemini returned incomplete or invalid JSON");
+  }
+};
+
+/* ===============================
+   OPTIONAL: AUDIO SUMMARY
+================================ */
+export const generateAudioSummary = async (text) => {
+  const vertexAI = new VertexAI({
+    project: process.env.VERTEX_AI_PROJECT_ID,
+    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+  });
+
+  const ttsModel = vertexAI.getGenerativeModel({
+    model: "gemini-2.5-flash-preview-tts",
+  });
+
+  const result = await ttsModel.generateContent({
+    contents: [{ role: "user", parts: [{ text }] }],
+  });
+
+  const audioBase64 =
+    result?.response?.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+
+  if (!audioBase64) {
+    throw new Error("Audio generation failed");
+  }
+
+  return audioBase64;
+};
