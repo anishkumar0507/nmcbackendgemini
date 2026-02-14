@@ -97,6 +97,9 @@ export const analyzeWithGemini = async ({
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_AI_PROJECT_ID,
     location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    credentials: process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+      ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+      : undefined,
   });
 
   const model = vertexAI.getGenerativeModel({
@@ -147,6 +150,9 @@ export const generateAudioSummary = async (text) => {
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_AI_PROJECT_ID,
     location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
+    credentials: process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+      ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+      : undefined,
   });
 
   const ttsModel = vertexAI.getGenerativeModel({

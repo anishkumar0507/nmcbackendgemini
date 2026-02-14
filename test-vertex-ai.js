@@ -12,14 +12,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 console.log('[Test] Environment Variables:');
 console.log('  VERTEX_AI_PROJECT_ID:', process.env.VERTEX_AI_PROJECT_ID);
 console.log('  VERTEX_AI_LOCATION:', process.env.VERTEX_AI_LOCATION);
-console.log('  GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS);
+console.log('  GOOGLE_SERVICE_ACCOUNT_KEY:', process.env.GOOGLE_SERVICE_ACCOUNT_KEY ? '[set]' : '[not set]');
 
 // Setup credentials path
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS && !process.env.GOOGLE_APPLICATION_CREDENTIALS.startsWith('/')) {
-  const credentialsPath = path.join(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS);
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  console.log('  GOOGLE_APPLICATION_CREDENTIALS (resolved):', process.env.GOOGLE_APPLICATION_CREDENTIALS);
-}
+// No need to resolve credentials path. Use GOOGLE_SERVICE_ACCOUNT_KEY as JSON string.
 
 console.log('\n[Test] Testing Vertex AI SDK...');
 
@@ -31,7 +27,10 @@ try {
   console.log('[Test] Initializing VertexAI...');
   const vertexAI = new VertexAI({
     project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || 'asia-southeast1'
+    location: process.env.VERTEX_AI_LOCATION || 'asia-southeast1',
+    credentials: process.env.GOOGLE_SERVICE_ACCOUNT_KEY
+      ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
+      : undefined,
   });
   console.log('[Test] ✓ VertexAI initialized');
   

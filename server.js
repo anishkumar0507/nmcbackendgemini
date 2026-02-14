@@ -21,12 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
 
 // Setup Google Cloud credentials from JSON env var (Render-friendly)
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
-  const credentialsPath = '/tmp/gcp-key.json';
-  fs.writeFileSync(credentialsPath, process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON, 'utf8');
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = credentialsPath;
-  console.log(`✅ Google credentials written to ${credentialsPath}`);
-}
+// Removed GOOGLE_APPLICATION_CREDENTIALS logic. Use GOOGLE_SERVICE_ACCOUNT_KEY with full JSON string instead.
 
 // Validate required environment variables
 const requiredEnv = ["VERTEX_AI_PROJECT_ID"];
