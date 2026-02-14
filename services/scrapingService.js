@@ -159,7 +159,7 @@ export const scrapeUrl = async (url) => {
       }
 
       await page.waitForSelector('body', { timeout: 15000 });
-      await page.waitForTimeout(1500);
+      await new Promise(resolve => setTimeout(resolve, 1500));
 
       const rawText = await page.evaluate(() => {
         const elements = document.querySelectorAll('script, style, noscript');
