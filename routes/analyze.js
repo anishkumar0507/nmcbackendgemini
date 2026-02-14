@@ -1,17 +1,30 @@
 import express from 'express';
 import { scrapeBlogContent } from '../utils/scrapeBlogContent.js';
+import { youtubeAuditPipeline, isYouTubeUrl } from '../utils/youtubeAuditPipeline.js';
 
 const router = express.Router();
 
 // POST /api/analyze
 router.post('/', async (req, res) => {
   try {
-    // Example: If GEMINI_API_KEY is required
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
     }
 
     const { url, ...rest } = req.body;
+    if (url && isYouTubeUrl(url)) {
+      // YouTube pipeline
+      const result = await youtubeAuditPipeline(url);
+      if (result.error) {
+        return res.status(400).json(result);
+      }
+      return res.json({
+        ok: true,
+        message: 'YouTube audio audit completed.',
+        ...result
+      });
+    }
+
     let extracted = null;
     if (url) {
       try {
@@ -20,9 +33,6 @@ router.post('/', async (req, res) => {
         return res.status(400).json({ error: scrapeErr.message || 'Failed to scrape blog content' });
       }
     }
-
-    // TODO: Pass extracted.content to compliance/analysis logic if needed
-    // For now, just return the extracted content (no HTML)
     res.json({
       ok: true,
       message: url ? 'Blog content scraped and ready for analysis.' : 'Analyze endpoint working.',
