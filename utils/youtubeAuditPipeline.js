@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { transcribe } from '../services/transcriptionService.js';
-import geminiService from '../geminiService.js';
+import { analyzeWithGemini } from '../geminiService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TMP_DIR = '/tmp';
@@ -91,7 +91,7 @@ async function youtubeAuditPipeline(url) {
     const transcriptResult = await transcribe(audioBuffer, 'audio/mp3');
     console.log('[OpenAI] Transcription completed');
     console.log('[Gemini] Audit started');
-    const auditResult = await geminiService.auditTranscript(transcriptResult.transcript);
+    const auditResult = await analyzeWithGemini({ content: transcriptResult.transcript, inputType: 'audio' });
     console.log('[Gemini] Audit completed');
     return {
       transcript: transcriptResult.transcript,
