@@ -15,30 +15,28 @@ const upload = multer({
   },
   fileFilter: (req, file, cb) => {
     // Accept images, audio, and video
-    const allowedMimes = [
-      'image/jpeg',
-      'image/png',
-      'image/gif',
-      'image/webp',
-      'audio/mpeg',
-      'audio/mp3',
-      'audio/wav',
-      'audio/webm',
-      'audio/ogg',
-      'video/mp4',
-      'video/webm',
-      'video/quicktime'
+    const allowedTypes = [
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+      "audio/mpeg",
+      "audio/mp3",
+      "audio/wav",
+      "audio/webm",
+      "audio/ogg",
+      "video/mp4",
+      "video/webm",
+      "video/quicktime",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     ];
-    
-    // Check if file mimetype matches any allowed type
-    const isAllowed = allowedMimes.some(mime => {
-      return file.mimetype === mime || file.mimetype.startsWith(mime.split('/')[0] + '/');
-    });
-    
-    if (isAllowed) {
+    if (allowedTypes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error(`Unsupported file type: ${file.mimetype}. Allowed types: ${allowedMimes.join(', ')}`), false);
+      console.error(`[Audit Upload] Unsupported file type: ${file.mimetype}`);
+      cb(new Error(`Unsupported file type: ${file.mimetype}`));
     }
   }
 });
