@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { transcribe } from '../services/transcriptionService.js';
-import geminiService from '../services/geminiService.js';
+import geminiService from '../geminiService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TMP_DIR = '/tmp';
