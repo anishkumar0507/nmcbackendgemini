@@ -21,7 +21,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config();
 
 // Setup Google Cloud credentials from JSON env var (Render-friendly)
-// Removed GOOGLE_APPLICATION_CREDENTIALS logic. Use GOOGLE_SERVICE_ACCOUNT_KEY with full JSON string instead.
+// GOOGLE_APPLICATION_CREDENTIALS logic removed. Use GOOGLE_SERVICE_ACCOUNT_KEY with full JSON string instead.
 
 // Validate required environment variables
 const requiredEnv = ["VERTEX_AI_PROJECT_ID"];
@@ -125,7 +125,7 @@ app.use((err, req, res, next) => {
       console.log(`📍 Frontend URL: ${process.env.FRONTEND_URL || 'http://localhost:3000'}`);
       console.log(`☁️  Vertex AI Project: ${process.env.VERTEX_AI_PROJECT_ID || '✗ Missing'}`);
       console.log(`📍 Vertex AI Location: ${process.env.VERTEX_AI_LOCATION || 'us-central1'}`);
-      console.log(`🔐 Service Account: ${process.env.GOOGLE_APPLICATION_CREDENTIALS ? '✓ Configured' : '✗ Missing'}`);
+      console.log(`🔐 Service Account: ${process.env.GOOGLE_SERVICE_ACCOUNT_KEY ? '✓ Configured' : '✗ Missing'}`);
       console.log(`💾 MongoDB: ${process.env.MONGODB_URI ? '✓ Configured' : '✗ Missing (Auth disabled)'}`);
       console.log(`🔗 Available routes:`);
       console.log(`   - GET  /health`);

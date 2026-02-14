@@ -6,10 +6,18 @@ let visionClient = null;
 
 const getVisionClient = () => {
   if (!visionClient) {
-    visionClient = new vision.ImageAnnotatorClient();
-    console.log('[OCR] Google Vision client initialized');
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY env variable is missing');
+    }
+    let credentials;
+    try {
+      credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY);
+    } catch (e) {
+      throw new Error('GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON');
+    }
+    visionClient = new vision.ImageAnnotatorClient({ credentials });
+    console.log('[OCR] Google Vision client initialized with env credentials');
   }
-
   return visionClient;
 };
 
