@@ -14,7 +14,8 @@ const createToken = (user) => {
 
 export const signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    let { name, email, password } = req.body;
+    email = email?.toLowerCase();
     console.log('[Auth] Signup request received:', { email, name });
 
     if (!name || !email || !password) {
@@ -31,7 +32,7 @@ export const signup = async (req, res) => {
       });
     }
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
+    const existing = await User.findOne({ email });
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -40,10 +41,11 @@ export const signup = async (req, res) => {
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
+    console.log('[Auth] Password hashed for signup');
 
     const user = await User.create({
       name,
-      email: email.toLowerCase(),
+      email,
       passwordHash
     });
 
@@ -73,19 +75,22 @@ export const signup = async (req, res) => {
 
 export const login = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    let { email, password } = req.body;
+    email = email?.toLowerCase();
+    console.log('[Auth] Login request received:', { email });
     if (!email || !password) {
       return res.status(400).json({ message: 'Email and password are required.' });
     }
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await User.findOne({ email });
+    console.log('[Auth] User found:', !!user);
     if (!user) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
-    const match = await user.comparePassword(password);
+    const match = await bcrypt.compare(password, user.passwordHash);
+    console.log('[Auth] Password match:', match);
     if (!match) {
       return res.status(401).json({ message: 'Invalid email or password.' });
     }
-    // Use process.env.JWT_SECRET for signing
     const payload = { id: user._id, email: user.email };
     const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
     return res.json({ token });
