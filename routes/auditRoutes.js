@@ -65,7 +65,8 @@ router.get('/audit/:id', authMiddleware, getAuditById);
 /**
  * POST /analyze
  * Compatibility endpoint for frontend
+ * (No auth required temporarily)
  */
-router.post('/analyze', authMiddleware, upload.single('file'), analyzeCompatibility);
+router.post('/analyze', upload.single('file'), analyzeCompatibility);
 
 export default router;

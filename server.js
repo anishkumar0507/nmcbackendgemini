@@ -6,6 +6,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { connectDB } from './config/database.js';
 import auditRoutes from './routes/auditRoutes.js';
+import rulesRoutes from './routes/rulesRoutes.js';
+import analyzeRoutes from './routes/analyze.js';
 
 // Import auth routes
 console.log('[Server] Importing auth routes...');
@@ -90,6 +92,8 @@ try {
 }
 
 app.use('/api', auditRoutes);
+app.use('/api/rules', rulesRoutes);
+app.use('/api/analyze', analyzeRoutes);
 
 // 404 handler for undefined routes
 app.use((req, res, next) => {
