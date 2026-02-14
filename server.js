@@ -38,34 +38,28 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
-const allowedOrigins = new Set([
-  'https://www.nextdoc.in',
-  'https://nextdoc.in',
-  'http://localhost:3000'
-]);
+// --- CORS CONFIGURATION ---
+const allowedOrigins = [
+  'http://localhost:5173',
+  process.env.FRONTEND_URL?.replace(/\/$/, '')
+].filter(Boolean);
 
-if (process.env.FRONTEND_URL) {
-  allowedOrigins.add(process.env.FRONTEND_URL.replace(/\/$/, ''));
-}
-
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, true);
-      return;
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin.replace(/\/$/, ''))) {
+      return callback(null, true);
     }
-
-    const normalizedOrigin = origin.replace(/\/$/, '');
-
-    if (allowedOrigins.has(normalizedOrigin)) {
-      callback(null, true);
-      return;
-    }
-
-    callback(new Error('CORS not allowed'));
+    return callback(new Error('CORS not allowed'));
   },
-  credentials: true
-}));
+  credentials: true,
+};
+
+app.use(cors(corsOptions));
+// Handle preflight OPTIONS requests for all routes
+app.options('*', cors(corsOptions));
+// --- END CORS CONFIGURATION ---
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
