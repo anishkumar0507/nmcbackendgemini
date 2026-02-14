@@ -106,51 +106,53 @@ export const analyzeWithGemini = async ({
   try {
     credentials = JSON.parse(key);
   } catch (e) {
+    console.error("[GeminiService] Invalid GOOGLE_SERVICE_ACCOUNT_KEY JSON:", e);
     throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON");
   }
-  const vertexAI = new VertexAI({
-    project,
-    location,
-    googleAuthOptions: { credentials },
-  });
-
-  const model = vertexAI.getGenerativeModel({
-    model: MODEL_NAME,
-    generationConfig: {
-      temperature: 0.1,
-      maxOutputTokens: 8192,
-      topP: 0.95,
-    },
-  });
-
-  const prompt = buildCompliancePrompt({
-    inputType,
-    category,
-    analysisMode,
-  });
-
-  const parts = [
-    { text: content },
-    { text: prompt },
-  ];
-
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts }],
-  });
-
-  let rawText =
-    result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-
+  let vertexAI;
+  try {
+    vertexAI = new VertexAI({
+      project,
+      location,
+      googleAuthOptions: { credentials },
+    });
+  } catch (e) {
+    console.error("[GeminiService] VertexAI initialization failed:", e);
+    throw new Error("VertexAI initialization failed");
+  }
+  let model;
+  try {
+    model = vertexAI.getGenerativeModel({
+      model: MODEL_NAME,
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 8192,
+        topP: 0.95,
+      },
+    });
+  } catch (e) {
+    console.error("[GeminiService] getGenerativeModel failed:", e);
+    throw new Error("Failed to get generative model");
+  }
+  const prompt = buildCompliancePrompt({ inputType, category, analysisMode });
+  const parts = [ { text: content }, { text: prompt } ];
+  let result;
+  try {
+    result = await model.generateContent({ contents: [{ role: "user", parts }] });
+  } catch (e) {
+    console.error("[GeminiService] generateContent failed:", e);
+    throw new Error("Gemini model generateContent failed");
+  }
+  let rawText = result?.response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
   if (!rawText) {
+    console.error("[GeminiService] Gemini returned empty response");
     throw new Error("Gemini returned empty response");
   }
-
   const cleaned = cleanJsonString(rawText);
-
   try {
     return JSON.parse(cleaned);
   } catch (err) {
-    console.error("❌ RAW GEMINI OUTPUT:\n", cleaned);
+    console.error("[GeminiService] Invalid JSON from Gemini:\n", cleaned);
     throw new Error("Gemini returned incomplete or invalid JSON");
   }
 };
