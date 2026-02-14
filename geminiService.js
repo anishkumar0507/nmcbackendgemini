@@ -90,16 +90,28 @@ export const analyzeWithGemini = async ({
   category = "General",
   analysisMode = "Standard",
 }) => {
-  if (!process.env.VERTEX_AI_PROJECT_ID) {
-    throw new Error("VERTEX_AI_PROJECT_ID missing");
+  const project = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1";
+  const key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!project) {
+    throw new Error("VERTEX_PROJECT_ID (or VERTEX_AI_PROJECT_ID) missing");
   }
-
+  if (!location) {
+    throw new Error("VERTEX_LOCATION (or VERTEX_AI_LOCATION) missing");
+  }
+  if (!key) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY env variable missing");
+  }
+  let credentials;
+  try {
+    credentials = JSON.parse(key);
+  } catch (e) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON");
+  }
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
-    credentials: process.env.GOOGLE_SERVICE_ACCOUNT_KEY
-      ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
-      : undefined,
+    project,
+    location,
+    googleAuthOptions: { credentials },
   });
 
   const model = vertexAI.getGenerativeModel({
@@ -147,12 +159,28 @@ export const analyzeWithGemini = async ({
    OPTIONAL: AUDIO SUMMARY
 ================================ */
 export const generateAudioSummary = async (text) => {
+  const project = process.env.VERTEX_PROJECT_ID || process.env.VERTEX_AI_PROJECT_ID;
+  const location = process.env.VERTEX_LOCATION || process.env.VERTEX_AI_LOCATION || "asia-southeast1";
+  const key = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+  if (!project) {
+    throw new Error("VERTEX_PROJECT_ID (or VERTEX_AI_PROJECT_ID) missing");
+  }
+  if (!location) {
+    throw new Error("VERTEX_LOCATION (or VERTEX_AI_LOCATION) missing");
+  }
+  if (!key) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY env variable missing");
+  }
+  let credentials;
+  try {
+    credentials = JSON.parse(key);
+  } catch (e) {
+    throw new Error("GOOGLE_SERVICE_ACCOUNT_KEY is not valid JSON");
+  }
   const vertexAI = new VertexAI({
-    project: process.env.VERTEX_AI_PROJECT_ID,
-    location: process.env.VERTEX_AI_LOCATION || "asia-southeast1",
-    credentials: process.env.GOOGLE_SERVICE_ACCOUNT_KEY
-      ? JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY)
-      : undefined,
+    project,
+    location,
+    googleAuthOptions: { credentials },
   });
 
   const ttsModel = vertexAI.getGenerativeModel({
