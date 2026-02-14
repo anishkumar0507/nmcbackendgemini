@@ -8,7 +8,7 @@ export const analyzeCompatibility = async (req, res) => {
   try {
     const { content, inputType, category, analysisMode } = req.body;
     const file = req.file;
-    
+
     // Validate input
     if (!content && !file) {
       return res.status(400).json({
@@ -16,7 +16,7 @@ export const analyzeCompatibility = async (req, res) => {
         error: 'Content or file is required'
       });
     }
-    
+
     // Prepare input object
     const input = {};
     if (content) {
@@ -31,20 +31,18 @@ export const analyzeCompatibility = async (req, res) => {
     }
 
     const auditResult = await processContent(input, {
-      userId: req.user?.id,
+      userId: req.user.id,
       category,
       analysisMode
     });
 
     return res.json(auditResult);
   } catch (error) {
-    console.error('[Compatibility] Error:', error);
+    console.error('Error in analyzeCompatibility:', error);
     return res.status(500).json({
-      error: error.message || error.error || 'Analysis failed'
+      ok: false,
+      error: 'Internal server error',
+      details: error.message
     });
   }
-};
-
-export default {
-  analyzeCompatibility
 };

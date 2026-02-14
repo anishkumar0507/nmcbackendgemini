@@ -74,52 +74,24 @@ export const signup = async (req, res) => {
 export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    console.log('[Auth] Login request received:', req.body.email || 'no email provided');
-
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required.'
-      });
+      return res.status(400).json({ message: 'Email and password are required.' });
     }
-
     const user = await User.findOne({ email: email.toLowerCase() });
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
+      return res.status(401).json({ message: 'Invalid email or password.' });
     }
-
     const match = await user.comparePassword(password);
     if (!match) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password.'
-      });
+      return res.status(401).json({ message: 'Invalid email or password.' });
     }
-
-    const token = createToken(user);
-
-    console.log('[Auth] Login successful', { userId: user._id, email: user.email });
-
-    return res.status(200).json({
-      success: true,
-      message: 'Login successful',
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email
-      }
-    });
+    // Use process.env.JWT_SECRET for signing
+    const payload = { id: user._id, email: user.email };
+    const token = require('jsonwebtoken').sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    return res.json({ token });
   } catch (error) {
     console.error('[Auth] Login error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
+    return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
