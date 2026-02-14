@@ -87,7 +87,7 @@ export const login = async (req, res) => {
     }
     // Use process.env.JWT_SECRET for signing
     const payload = { id: user._id, email: user.email };
-    const token = require('jsonwebtoken').sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+    const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
     return res.json({ token });
   } catch (error) {
     console.error('[Auth] Login error:', error);
