@@ -1,6 +1,13 @@
 // Utility for extracting text from PDF and DOCX
-import pdfParseModule from 'pdf-parse';
-const pdfParse = pdfParseModule.default || pdfParseModule;
+
+let pdfParse;
+async function loadPdfParse() {
+  if (!pdfParse) {
+    const module = await import('pdf-parse');
+    pdfParse = module.default || module;
+  }
+  return pdfParse;
+}
 import mammoth from 'mammoth';
 
 /**
@@ -11,7 +18,8 @@ import mammoth from 'mammoth';
 
 export async function extractPdfText(buffer) {
   try {
-    const data = await pdfParse(buffer);
+    const pdfParser = await loadPdfParse();
+    const data = await pdfParser(buffer);
     return {
       error: false,
       text: (data.text || '').trim(),
