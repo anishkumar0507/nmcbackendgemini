@@ -7,6 +7,9 @@ const router = express.Router();
 // POST /api/analyze
 router.post('/', async (req, res) => {
   try {
+    console.log('Analyze Request Body:', req.body);
+    console.log('Authorization:', req.headers.authorization);
+
     if (!process.env.GEMINI_API_KEY) {
       return res.status(500).json({ error: 'GEMINI_API_KEY is missing in environment variables.' });
     }
@@ -39,8 +42,12 @@ router.post('/', async (req, res) => {
       ...(extracted ? { title: extracted.title, content: extracted.content } : {})
     });
   } catch (error) {
-    console.error('[Analyze] Error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    console.error('Analyze API Error:', error);
+    console.error('Stack:', error.stack);
+    return res.status(500).json({
+      message: 'Internal server error',
+      error: error.message
+    });
   }
 });
 
