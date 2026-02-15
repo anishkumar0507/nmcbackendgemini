@@ -413,8 +413,10 @@ const processUrl = async ({ url, category, analysisMode }) => {
         return { error: 'Unable to transcribe YouTube audio.' };
       }
     }
-    if (!transcriptText || typeof transcriptText !== 'string' || transcriptText.trim().length < 50) {
-      return { error: 'Extracted content is empty.' };
+    console.log('[Pipeline] Extracted text length:', transcriptText?.length);
+    if (!transcriptText || typeof transcriptText !== 'string' || transcriptText.trim().length < 100) {
+      console.log('[Pipeline] Blocked invalid text before Gemini');
+      return { error: 'Invalid or empty extracted content.' };
     }
     let auditResult;
     try {
@@ -454,8 +456,10 @@ const processUrl = async ({ url, category, analysisMode }) => {
     } catch (err) {
       return { error: 'No readable content found.' };
     }
-    if (!articleText || typeof articleText !== 'string' || articleText.trim().length < 50) {
-      return { error: 'No readable content found.' };
+    console.log('[Pipeline] Extracted text length:', articleText?.length);
+    if (!articleText || typeof articleText !== 'string' || articleText.trim().length < 100) {
+      console.log('[Pipeline] Blocked invalid text before Gemini');
+      return { error: 'Invalid or empty extracted content.' };
     }
     let auditResult;
     try {
