@@ -325,19 +325,34 @@ const saveAuditRecord = async ({
 const processText = async ({ text, category, analysisMode }) => {
   validateInputSize(text, 'text');
 
-  const auditResult = await analyzeWithGemini({
+  const geminiResponse = await analyzeWithGemini({
     content: text,
     inputType: 'text',
     category,
     analysisMode
   });
-
+  let safeResult;
+  if (!geminiResponse) {
+    console.error('[Content Processor] Gemini returned empty response');
+    safeResult = { success: false, error: 'Gemini returned empty response' };
+  } else if (typeof geminiResponse === 'object') {
+    safeResult = geminiResponse;
+  } else if (typeof geminiResponse === 'string') {
+    try {
+      safeResult = JSON.parse(geminiResponse);
+    } catch {
+      safeResult = { data: geminiResponse };
+    }
+  } else {
+    safeResult = { success: false, error: 'Unexpected Gemini response format' };
+  }
+  console.log('[Content Processor] Gemini handled safely');
   return {
     contentType: 'text',
     originalInput: text,
     extractedText: text,
     transcript: '',
-    auditResult
+    auditResult: safeResult
   };
 };
 
@@ -345,19 +360,34 @@ const processMediaBuffer = async ({ buffer, mimetype, inputType, originalInput, 
   const transcriptionResult = await transcribe(buffer, mimetype);
   const transcriptText = transcriptionResult.transcript;
 
-  const auditResult = await analyzeWithGemini({
+  const geminiResponse = await analyzeWithGemini({
     content: transcriptText,
     inputType,
     category,
     analysisMode
   });
-
+  let safeResult;
+  if (!geminiResponse) {
+    console.error('[Content Processor] Gemini returned empty response');
+    safeResult = { success: false, error: 'Gemini returned empty response' };
+  } else if (typeof geminiResponse === 'object') {
+    safeResult = geminiResponse;
+  } else if (typeof geminiResponse === 'string') {
+    try {
+      safeResult = JSON.parse(geminiResponse);
+    } catch {
+      safeResult = { data: geminiResponse };
+    }
+  } else {
+    safeResult = { success: false, error: 'Unexpected Gemini response format' };
+  }
+  console.log('[Content Processor] Gemini handled safely');
   return {
     contentType: inputType,
     originalInput,
     extractedText: transcriptText,
     transcript: transcriptText,
-    auditResult
+    auditResult: safeResult
   };
 };
 
@@ -368,19 +398,34 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
     throw new Error('Unable to extract readable text from image');
   }
 
-  const auditResult = await analyzeWithGemini({
+  const geminiResponse = await analyzeWithGemini({
     content: extractedText,
     inputType: 'image',
     category,
     analysisMode
   });
-
+  let safeResult;
+  if (!geminiResponse) {
+    console.error('[Content Processor] Gemini returned empty response');
+    safeResult = { success: false, error: 'Gemini returned empty response' };
+  } else if (typeof geminiResponse === 'object') {
+    safeResult = geminiResponse;
+  } else if (typeof geminiResponse === 'string') {
+    try {
+      safeResult = JSON.parse(geminiResponse);
+    } catch {
+      safeResult = { data: geminiResponse };
+    }
+  } else {
+    safeResult = { success: false, error: 'Unexpected Gemini response format' };
+  }
+  console.log('[Content Processor] Gemini handled safely');
   return {
     contentType: 'image',
     originalInput,
     extractedText,
     transcript: extractedText,
-    auditResult
+    auditResult: safeResult
   };
 };
 
@@ -418,9 +463,9 @@ const processUrl = async ({ url, category, analysisMode }) => {
       console.log('[Pipeline] Blocked invalid text before Gemini');
       return { success: false, error: 'No valid content to analyze' };
     }
-    let auditResult;
+    let geminiResponse;
     try {
-      auditResult = await analyzeWithGemini({
+      geminiResponse = await analyzeWithGemini({
         content: transcriptText,
         inputType: 'video',
         category,
@@ -429,12 +474,28 @@ const processUrl = async ({ url, category, analysisMode }) => {
     } catch (geminiErr) {
       return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
     }
+    let safeResult;
+    if (!geminiResponse) {
+      console.error('[Content Processor] Gemini returned empty response');
+      safeResult = { success: false, error: 'Gemini returned empty response' };
+    } else if (typeof geminiResponse === 'object') {
+      safeResult = geminiResponse;
+    } else if (typeof geminiResponse === 'string') {
+      try {
+        safeResult = JSON.parse(geminiResponse);
+      } catch {
+        safeResult = { data: geminiResponse };
+      }
+    } else {
+      safeResult = { success: false, error: 'Unexpected Gemini response format' };
+    }
+    console.log('[Content Processor] Gemini handled safely');
     return {
       contentType: 'video',
       originalInput: url,
       extractedText: transcriptText,
       transcript: transcriptText,
-      auditResult
+      auditResult: safeResult
     };
   } else {
     // STRICT URL SCRAPING FLOW (Non-YouTube)
@@ -461,9 +522,9 @@ const processUrl = async ({ url, category, analysisMode }) => {
       console.log('[Pipeline] Blocked invalid text before Gemini');
       return { success: false, error: 'No valid content to analyze' };
     }
-    let auditResult;
+    let geminiResponse;
     try {
-      auditResult = await analyzeWithGemini({
+      geminiResponse = await analyzeWithGemini({
         content: articleText,
         inputType: 'webpage',
         category,
@@ -472,12 +533,28 @@ const processUrl = async ({ url, category, analysisMode }) => {
     } catch (geminiErr) {
       return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
     }
+    let safeResult;
+    if (!geminiResponse) {
+      console.error('[Content Processor] Gemini returned empty response');
+      safeResult = { success: false, error: 'Gemini returned empty response' };
+    } else if (typeof geminiResponse === 'object') {
+      safeResult = geminiResponse;
+    } else if (typeof geminiResponse === 'string') {
+      try {
+        safeResult = JSON.parse(geminiResponse);
+      } catch {
+        safeResult = { data: geminiResponse };
+      }
+    } else {
+      safeResult = { success: false, error: 'Unexpected Gemini response format' };
+    }
+    console.log('[Content Processor] Gemini handled safely');
     return {
       contentType: 'webpage',
       originalInput: url,
       extractedText: articleText,
       transcript: articleText,
-      auditResult
+      auditResult: safeResult
     };
   }
 };
