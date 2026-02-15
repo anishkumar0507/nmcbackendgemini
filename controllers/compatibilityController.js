@@ -37,18 +37,16 @@ export const analyzeCompatibility = async (req, res) => {
       analysisMode
     });
 
-    // Explicitly define required fields
-    const detectedType = input.url ? 'url' : (input.text ? 'text' : (file ? file.mimetype?.split('/')[0] : undefined));
-    const contentType = detectedType || 'unknown';
-    const url = input.url;
-    const text = input.text;
-    const originalInput = url || text || req.body.input || (file ? file.originalname : null);
+    // STRICT: Explicitly derive required fields
+    const detectedType = input.url ? 'url' : (input.text ? 'text' : null);
+    const contentType = detectedType || req.body.contentType || (req.body.url ? 'url' : req.body.text ? 'text' : null);
+    const originalInput = req.body.url || req.body.text || req.body.input || null;
     const safeGeminiResult = geminiResponse && typeof geminiResponse === 'object' ? geminiResponse : null;
     const auditResult = safeGeminiResult || geminiResponse || null;
 
-    // Defensive validation BEFORE save
+    // HARD validation BEFORE save
     if (!contentType || !originalInput || !auditResult) {
-      console.error('Missing required fields for AuditRecord save', {
+      console.error('AuditRecord NOT saved - Missing required fields', {
         contentType,
         originalInput,
         auditResult
@@ -61,14 +59,14 @@ export const analyzeCompatibility = async (req, res) => {
 
     // Lazy import to avoid circular deps
     const AuditRecord = (await import('../models/AuditRecord.js')).default;
-    await AuditRecord.create({
+    const savedRecord = await AuditRecord.create({
       user: req.user?._id || null,
       contentType,
       originalInput,
       auditResult,
       createdAt: new Date()
     });
-    console.log('AuditRecord saved successfully');
+    console.log('AuditRecord saved successfully:', savedRecord._id);
 
     return res.json(auditResult);
   } catch (error) {
