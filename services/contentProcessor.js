@@ -414,9 +414,9 @@ const processUrl = async ({ url, category, analysisMode }) => {
       }
     }
     console.log('[Pipeline] Extracted text length:', transcriptText?.length);
-    if (!transcriptText || typeof transcriptText !== 'string' || transcriptText.trim().length < 100) {
+    if (!transcriptText || typeof transcriptText !== 'string' || transcriptText.trim().length < 50) {
       console.log('[Pipeline] Blocked invalid text before Gemini');
-      return { error: 'Invalid or empty extracted content.' };
+      return { success: false, error: 'No valid content to analyze' };
     }
     let auditResult;
     try {
@@ -457,9 +457,9 @@ const processUrl = async ({ url, category, analysisMode }) => {
       return { error: 'No readable content found.' };
     }
     console.log('[Pipeline] Extracted text length:', articleText?.length);
-    if (!articleText || typeof articleText !== 'string' || articleText.trim().length < 100) {
+    if (!articleText || typeof articleText !== 'string' || articleText.trim().length < 50) {
       console.log('[Pipeline] Blocked invalid text before Gemini');
-      return { error: 'Invalid or empty extracted content.' };
+      return { success: false, error: 'No valid content to analyze' };
     }
     let auditResult;
     try {

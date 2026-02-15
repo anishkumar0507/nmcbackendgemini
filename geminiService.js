@@ -1,3 +1,19 @@
+// Safe JSON extractor for Gemini output
+function extractValidJSON(text) {
+  try {
+    if (!text || typeof text !== "string") return null;
+    const firstBrace = text.indexOf("{");
+    const lastBrace = text.lastIndexOf("}");
+    if (firstBrace === -1 || lastBrace === -1) {
+      return null;
+    }
+    const jsonString = text.slice(firstBrace, lastBrace + 1);
+    return JSON.parse(jsonString);
+  } catch (err) {
+    console.error("[GeminiService] JSON Parse Failed:", err.message);
+    return null;
+  }
+}
 import { VertexAI } from "@google-cloud/vertexai";
 
 /* ===============================
@@ -153,17 +169,20 @@ export const analyzeWithGemini = async ({
   }
   console.log("[GeminiService] Raw Gemini output:", rawText);
   const cleaned = cleanJsonString(rawText);
-  let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch (err) {
-    console.error("[GeminiService] Invalid JSON from Gemini:\n", cleaned);
-    throw new Error("Gemini returned incomplete or invalid JSON");
+  const parsed = extractValidJSON(cleaned);
+  if (!parsed) {
+    return {
+      success: false,
+      error: "Gemini returned malformed JSON"
+    };
   }
   // Validate unwanted keys
   if (parsed && (parsed.file_path || parsed.modified_content)) {
     console.error("[GeminiService] Invalid Gemini output: contains file modification keys", parsed);
-    throw new Error("Gemini returned file modification object instead of compliance JSON");
+    return {
+      success: false,
+      error: "Gemini returned file modification object instead of compliance JSON"
+    };
   }
   return parsed;
 };
