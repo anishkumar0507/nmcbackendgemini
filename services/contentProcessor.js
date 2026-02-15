@@ -377,22 +377,58 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
 const processUrl = async ({ url, category, analysisMode }) => {
   const urlType = detectUrlContentType(url);
 
+  // === ISSUE 1: YouTube Transcript Disabled Handling ===
   if (isYouTubeUrl(url)) {
     let transcriptText = '';
+    let usedAudioFallback = false;
     try {
       transcriptText = await fetchYouTubeTranscript(url);
     } catch (error) {
-      console.warn('[YouTube Transcript] Falling back to metadata:', error.message);
-      transcriptText = await fetchYouTubeFallbackText(url, error.message);
+      console.log('[YouTube] Transcript disabled');
+      // Do NOT use metadata fallback. Trigger audio transcription fallback.
+      try {
+        console.log('[YouTube] Downloading audio');
+        const tempDir = '/tmp';
+        const maxDurationSec = 600; // 10 minutes
+        const maxSizeBytes = 25 * 1024 * 1024; // 25MB
+        const { filePath, error: audioError } = await downloadYouTubeAudio(url, tempDir, maxDurationSec, maxSizeBytes);
+        if (audioError) {
+          return { error: audioError };
+        }
+        // Transcribe audio
+        let transcriptResult;
+        try {
+          transcriptResult = await transcribe(fs.readFileSync(filePath), 'audio/mp3');
+        } catch (transcribeErr) {
+          fs.unlinkSync(filePath);
+          return { error: 'Audio transcription failed: ' + (transcribeErr.message || transcribeErr) };
+        }
+        fs.unlinkSync(filePath);
+        transcriptText = transcriptResult.transcript;
+        usedAudioFallback = true;
+        if (!transcriptText || transcriptText.length < 50) {
+          return { error: 'Transcription too short or empty.' };
+        }
+        console.log('[YouTube] Transcription success');
+      } catch (audioFallbackErr) {
+        return { error: 'YouTube audio fallback failed: ' + (audioFallbackErr.message || audioFallbackErr) };
+      }
     }
-
-    const auditResult = await analyzeWithGemini({
-      content: transcriptText,
-      inputType: 'video',
-      category,
-      analysisMode
-    });
-
+    if (!transcriptText || transcriptText.length < 50) {
+      return { error: 'Transcript unavailable or too short.' };
+    }
+    let auditResult;
+    try {
+      auditResult = await analyzeWithGemini({
+        content: transcriptText,
+        inputType: 'video',
+        category,
+        analysisMode
+      });
+      console.log('[YouTube] Gemini audit success');
+    } catch (geminiErr) {
+      return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
+    }
     return {
       contentType: 'video',
       originalInput: url,
@@ -402,49 +438,69 @@ const processUrl = async ({ url, category, analysisMode }) => {
     };
   }
 
-  if (urlType === 'video' || urlType === 'audio') {
-    const { buffer, mimetype } = await downloadMediaFile(url);
-    if (mimetype.startsWith('text/') || mimetype.includes('html')) {
-      const { extractedText } = await scrapeUrl(url);
-      const auditResult = await analyzeWithGemini({
-        content: extractedText,
-        inputType: 'url',
-        category,
-        analysisMode
-      });
-
-      return {
-        contentType: 'webpage',
-        originalInput: url,
-        extractedText,
-        transcript: extractedText,
-        auditResult
-      };
-    }
-    return processMediaBuffer({
-      buffer,
-      mimetype,
-      inputType: urlType,
-      originalInput: url,
-      category,
-      analysisMode
-    });
+  // === ISSUE 2: Blog URL Bot Protection (403) ===
+  const BOT_KEYWORDS = [
+    'Performing security verification',
+    'verify you are not a bot',
+    'security service'
+  ];
+  function containsBotKeywords(text) {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return BOT_KEYWORDS.some(k => lower.includes(k.toLowerCase()));
   }
 
   let extractedText = '';
+  let usedPuppeteer = false;
   try {
     ({ extractedText } = await scrapeUrl(url));
+    if (containsBotKeywords(extractedText)) {
+      // Retry with Puppeteer + Stealth
+      usedPuppeteer = true;
+      try {
+        const puppeteer = (await import('puppeteer-extra')).default;
+        const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
+        puppeteer.use(StealthPlugin());
+        const browser = await puppeteer.launch({ headless: 'new' });
+        const page = await browser.newPage();
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.waitForSelector('body', { timeout: 15000 });
+        await new Promise(res => setTimeout(res, 1500));
+        const html = await page.content();
+        await browser.close();
+        // Use Readability
+        const { Readability } = await import('@mozilla/readability');
+        const { JSDOM } = await import('jsdom');
+        const dom = new JSDOM(html, { url });
+        const article = new Readability(dom.window.document).parse();
+        extractedText = (article?.textContent || '').replace(/\s+/g, ' ').trim();
+      } catch (puppeteerErr) {
+        // Fallback to previous extractedText
+      }
+      if (containsBotKeywords(extractedText)) {
+        return { error: 'Unable to extract actual website content due to bot protection.' };
+      }
+    }
   } catch (error) {
-    console.warn('[Scraping] Falling back to placeholder text:', error.message);
     extractedText = `Content could not be extracted due to access restrictions or timeouts. URL: ${url}. Please provide text or upload a file for review.`;
   }
-  const auditResult = await analyzeWithGemini({
-    content: extractedText,
-    inputType: 'url',
-    category,
-    analysisMode
-  });
-
+  if (!extractedText || containsBotKeywords(extractedText)) {
+    return { error: 'Unable to extract actual website content due to bot protection.' };
+  }
+  if (extractedText.length < 50) {
+    return { error: 'Extracted content too short to analyze.' };
+  }
+  let auditResult;
+  try {
+    auditResult = await analyzeWithGemini({
+      content: extractedText,
+      inputType: 'url',
+      category,
+      analysisMode
+    });
+  } catch (geminiErr) {
+    return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
+  }
   return {
     contentType: 'webpage',
     originalInput: url,
@@ -485,15 +541,68 @@ export const processContent = async (input, options = {}) => {
       analysisMode
     });
   } else if (contentType === 'document') {
-    // Add document processing logic here if needed
-    processingResult = {
-      contentType: 'document',
-      originalInput: input.file.originalname || 'uploaded document',
-      extractedText: null,
-      transcript: null,
-      auditResult: { error: 'Document processing not implemented yet.' }
-    };
-  } else if (contentType === 'unknown') {
+    // === ISSUE 3: PDF & DOCX Document Processing ===
+    let extractedText = '';
+    let mimetype = input.file.mimetype;
+    try {
+      if (mimetype === 'application/pdf') {
+        extractedText = await extractPdfText(input.file.buffer);
+      } else if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        extractedText = await extractDocxText(input.file.buffer);
+      } else {
+        return {
+          contentType: 'document',
+          originalInput: input.file.originalname || 'uploaded document',
+          extractedText: null,
+          transcript: null,
+          auditResult: { error: 'Unsupported document type.' }
+        };
+      }
+      extractedText = (extractedText || '').trim();
+      if (!extractedText || extractedText.length < 50) {
+        return {
+          contentType: 'document',
+          originalInput: input.file.originalname || 'uploaded document',
+          extractedText,
+          transcript: extractedText,
+          auditResult: { error: 'Document content too short to analyze.' }
+        };
+      }
+      let auditResult;
+      try {
+        auditResult = await analyzeWithGemini({
+          content: extractedText,
+          inputType: 'document',
+          category,
+          analysisMode
+        });
+      } catch (geminiErr) {
+        return {
+          contentType: 'document',
+          originalInput: input.file.originalname || 'uploaded document',
+          extractedText,
+          transcript: extractedText,
+          auditResult: { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) }
+        };
+      }
+      processingResult = {
+        contentType: 'document',
+        originalInput: input.file.originalname || 'uploaded document',
+        extractedText,
+        transcript: extractedText,
+        auditResult
+      };
+    } catch (docErr) {
+      processingResult = {
+        contentType: 'document',
+        originalInput: input.file.originalname || 'uploaded document',
+        extractedText: null,
+        transcript: null,
+        auditResult: { error: 'Document extraction failed: ' + (docErr.message || docErr) }
+      };
+    }
+  }
+  else if (contentType === 'unknown') {
     console.error('[Content Detection] Unable to detect content type');
     processingResult = {
       contentType: 'unknown',

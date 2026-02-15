@@ -14,7 +14,6 @@ const upload = multer({
     fileSize: 100 * 1024 * 1024, // 100MB limit
   },
   fileFilter: (req, file, cb) => {
-    // Accept images, audio, and video
     const allowedTypes = [
       "image/jpeg",
       "image/png",
@@ -38,7 +37,7 @@ const upload = multer({
       console.error(`[Audit Upload] Unsupported file type: ${file.mimetype}`);
       cb(new Error(`Unsupported file type: ${file.mimetype}`));
     }
-  }
+  },
 });
 
 /**

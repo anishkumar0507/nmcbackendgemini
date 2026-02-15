@@ -1,5 +1,5 @@
 import express from 'express';
-import { scrapeBlogContent } from '../utils/scrapeBlogContent.js';
+import { scrapeBlogContent } from '../services/scrapeBlogContent.js';
 import { youtubeAuditPipeline, isYouTubeUrl } from '../utils/youtubeAuditPipeline.js';
 
 const router = express.Router();
