@@ -36,6 +36,31 @@ export const analyzeCompatibility = async (req, res) => {
       analysisMode
     });
 
+    // Defensive: ensure required fields for AuditRecord
+    const contentType = input.url ? 'url' : (input.text ? 'text' : (file ? file.mimetype?.split('/')[0] : undefined));
+    const originalInput = input.url || input.text || (file ? file.originalname : undefined);
+
+    if (!contentType || !originalInput || !auditResult) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Missing required fields for audit record',
+        details: { contentType, originalInput, auditResult }
+      });
+    }
+
+    // Lazy import to avoid circular deps
+    const AuditRecord = (await import('../models/AuditRecord.js')).default;
+    const record = new AuditRecord({
+      userId: req.user.id,
+      contentType,
+      originalInput,
+      extractedText: '',
+      transcript: '',
+      auditResult
+    });
+    await record.save();
+    console.log('[AuditRecord] Saved successfully:', record._id);
+
     return res.json(auditResult);
   } catch (error) {
     console.error('Error in analyzeCompatibility:', error);
