@@ -1,3 +1,12 @@
+import { extractDocumentText } from './documentTextExtractor.js';
+// Bulletproof Gemini response sanitizer
+function sanitizeGeminiResponse(raw) {
+  if (!raw || typeof raw !== 'string') return null;
+  return raw
+    .replace(/```json|```/g, '')
+    .replace(/json/g, '')
+    .trim();
+}
 import { scrapeUrl } from './scrapingService.js';
 import { transcribe } from './transcriptionService.js';
 import { performAudit, performMultimodalAudit } from './auditService.js';
@@ -271,22 +280,20 @@ const validateGeminiResult = (result) => {
     'ethicalMarketing',
     'violations'
   ];
-
   if (!result || typeof result !== 'object') {
     console.error('[Content Processor] Invalid Gemini JSON:', result);
-    throw new Error('Gemini returned invalid JSON');
+    return false;
   }
-
   const missing = requiredKeys.filter((key) => !(key in result));
   if (missing.length > 0) {
     console.error('[Content Processor] Invalid Gemini JSON:', JSON.stringify(result));
-    throw new Error('Gemini returned invalid JSON');
+    return false;
   }
-
   if (!Array.isArray(result.violations)) {
     console.error('[Content Processor] Invalid Gemini JSON:', JSON.stringify(result));
-    throw new Error('Gemini returned invalid JSON');
+    return false;
   }
+  return true;
 };
 
 const saveAuditRecord = async ({
@@ -297,8 +304,8 @@ const saveAuditRecord = async ({
   transcript,
   auditResult
 }) => {
-  validateGeminiResult(auditResult);
-
+  // Only save if valid
+  if (!validateGeminiResult(auditResult)) return null;
   const record = new AuditRecord({
     userId,
     contentType,
@@ -307,7 +314,6 @@ const saveAuditRecord = async ({
     transcript,
     auditResult
   });
-
   await record.save();
   return record;
 };
@@ -541,48 +547,66 @@ export const processContent = async (input, options = {}) => {
       analysisMode
     });
   } else if (contentType === 'document') {
-    // === ISSUE 3: PDF & DOCX Document Processing ===
-    let extractedText = '';
+    // DOCX/PDF extraction and bulletproof Gemini audit
     let mimetype = input.file.mimetype;
+    let extractedText = '';
     try {
-      if (mimetype === 'application/pdf') {
-        extractedText = await extractPdfText(input.file.buffer);
-      } else if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        extractedText = await extractDocxText(input.file.buffer);
-      } else {
-        return {
-          contentType: 'document',
-          originalInput: input.file.originalname || 'uploaded document',
-          extractedText: null,
-          transcript: null,
-          auditResult: { error: 'Unsupported document type.' }
-        };
-      }
-      extractedText = (extractedText || '').trim();
-      if (!extractedText || extractedText.length < 50) {
-        return {
-          contentType: 'document',
-          originalInput: input.file.originalname || 'uploaded document',
-          extractedText,
-          transcript: extractedText,
-          auditResult: { error: 'Document content too short to analyze.' }
-        };
-      }
-      let auditResult;
+      const docResult = await extractDocumentText(input.file.buffer, mimetype);
+      extractedText = (docResult.text || '').trim();
+    } catch (err) {
+      extractedText = '';
+    }
+    if (!extractedText || extractedText.length < 20) {
+      processingResult = {
+        contentType: 'document',
+        originalInput: input.file.originalname || 'uploaded document',
+        extractedText,
+        transcript: extractedText,
+        auditResult: {
+          score: 0,
+          status: 'Needs Review',
+          summary: 'Document extraction failed or content too short.',
+          transcription: '',
+          financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
+          ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
+          violations: []
+        }
+      };
+    } else {
+      let rawGeminiOutput = '';
+      let auditResult = null;
       try {
-        auditResult = await analyzeWithGemini({
+        rawGeminiOutput = await analyzeWithGemini({
           content: extractedText,
           inputType: 'document',
           category,
           analysisMode
         });
-      } catch (geminiErr) {
-        return {
-          contentType: 'document',
-          originalInput: input.file.originalname || 'uploaded document',
-          extractedText,
-          transcript: extractedText,
-          auditResult: { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) }
+        const cleaned = sanitizeGeminiResponse(rawGeminiOutput);
+        try {
+          auditResult = JSON.parse(cleaned);
+        } catch (err) {
+          console.error('Gemini JSON Parse Error:');
+          console.error('Raw Output:', rawGeminiOutput);
+          auditResult = {
+            score: 0,
+            status: 'Needs Review',
+            summary: 'AI response parsing failed.',
+            transcription: '',
+            financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
+            ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
+            violations: []
+          };
+        }
+      } catch (err) {
+        auditResult = {
+          score: 0,
+          status: 'Needs Review',
+          summary: 'Gemini audit failed.',
+          transcription: '',
+          financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
+          ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
+          violations: []
         };
       }
       processingResult = {
@@ -591,14 +615,6 @@ export const processContent = async (input, options = {}) => {
         extractedText,
         transcript: extractedText,
         auditResult
-      };
-    } catch (docErr) {
-      processingResult = {
-        contentType: 'document',
-        originalInput: input.file.originalname || 'uploaded document',
-        extractedText: null,
-        transcript: null,
-        auditResult: { error: 'Document extraction failed: ' + (docErr.message || docErr) }
       };
     }
   }
