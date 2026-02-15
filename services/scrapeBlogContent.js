@@ -1,4 +1,9 @@
-import fetch from 'node-fetch';
+let fetchFn;
+if (typeof globalThis.fetch === 'function') {
+  fetchFn = globalThis.fetch;
+} else {
+  fetchFn = (await import('node-fetch')).default;
+}
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
 
@@ -17,7 +22,7 @@ export async function scrapeBlogContent(url) {
   try {
     let response;
     try {
-      response = await fetch(url, {
+      response = await fetchFn(url, {
         headers: { 'User-Agent': USER_AGENT },
         signal: controller.signal
       });
