@@ -31,6 +31,9 @@ REGULATIONS:
 
 CRITICAL OUTPUT RULES:
 - Return ONLY valid JSON
+- Do NOT return code
+- Do NOT return file modifications
+- Do NOT wrap response in markdown
 - Do NOT repeat points
 - Do NOT restart numbering
 - Each recommendation must be ACTIONABLE and REPLACEMENT-BASED
@@ -78,7 +81,7 @@ JSON SCHEMA:
 
 ANALYSIS MODE: ${analysisMode || "Standard"}
 
-Return JSON only.`;
+Return ONLY valid JSON. Do NOT return code. Do NOT return file modifications. Do NOT wrap response in markdown.`;
 };
 
 /* ===============================
@@ -148,13 +151,21 @@ export const analyzeWithGemini = async ({
     console.error("[GeminiService] Gemini returned empty response");
     throw new Error("Gemini returned empty response");
   }
+  console.log("[GeminiService] Raw Gemini output:", rawText);
   const cleaned = cleanJsonString(rawText);
+  let parsed;
   try {
-    return JSON.parse(cleaned);
+    parsed = JSON.parse(cleaned);
   } catch (err) {
     console.error("[GeminiService] Invalid JSON from Gemini:\n", cleaned);
     throw new Error("Gemini returned incomplete or invalid JSON");
   }
+  // Validate unwanted keys
+  if (parsed && (parsed.file_path || parsed.modified_content)) {
+    console.error("[GeminiService] Invalid Gemini output: contains file modification keys", parsed);
+    throw new Error("Gemini returned file modification object instead of compliance JSON");
+  }
+  return parsed;
 };
 
 /* ===============================
