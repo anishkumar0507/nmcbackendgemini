@@ -1,13 +1,14 @@
 import { extractDocumentText } from './documentTextExtractor.js';
 // Bulletproof Gemini response sanitizer
 function sanitizeGeminiResponse(raw) {
-  if (!raw || typeof raw !== 'string') return null;
+  if (!raw) return '';
+  if (typeof raw !== 'string') return raw;
   return raw
     .replace(/```json|```/g, '')
     .replace(/json/g, '')
     .trim();
 }
-import { scrapeUrl } from './scrapingService.js';
+import { scrapeBlogContent } from './scrapeBlogContent.js';
 import { transcribe } from './transcriptionService.js';
 import { performAudit, performMultimodalAudit } from './auditService.js';
 import fs from 'fs';
@@ -66,13 +67,14 @@ export const detectContentType = (input) => {
         console.log('[Content Detection] Type detected: audio');
         return 'audio';
       }
+      // Normalize all document types
       if ([
         'application/pdf',
         'application/msword',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         'text/plain'
       ].includes(mimetype)) {
-        console.log('[Content Detection] Type detected:', mimetype);
+        console.log('[Content Detection] Type detected: document');
         return 'document';
       }
     }
@@ -445,75 +447,33 @@ const processUrl = async ({ url, category, analysisMode }) => {
   }
 
   // === ISSUE 2: Blog URL Bot Protection (403) ===
-  const BOT_KEYWORDS = [
-    'Performing security verification',
-    'verify you are not a bot',
-    'security service'
-  ];
-  function containsBotKeywords(text) {
-    if (!text) return false;
-    const lower = text.toLowerCase();
-    return BOT_KEYWORDS.some(k => lower.includes(k.toLowerCase()));
-  }
-
-  let extractedText = '';
-  let usedPuppeteer = false;
+  // Use robust blog scraping utility
   try {
-    ({ extractedText } = await scrapeUrl(url));
-    if (containsBotKeywords(extractedText)) {
-      // Retry with Puppeteer + Stealth
-      usedPuppeteer = true;
-      try {
-        const puppeteer = (await import('puppeteer-extra')).default;
-        const StealthPlugin = (await import('puppeteer-extra-plugin-stealth')).default;
-        puppeteer.use(StealthPlugin());
-        const browser = await puppeteer.launch({ headless: 'new' });
-        const page = await browser.newPage();
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
-        await page.waitForSelector('body', { timeout: 15000 });
-        await new Promise(res => setTimeout(res, 1500));
-        const html = await page.content();
-        await browser.close();
-        // Use Readability
-        const { Readability } = await import('@mozilla/readability');
-        const { JSDOM } = await import('jsdom');
-        const dom = new JSDOM(html, { url });
-        const article = new Readability(dom.window.document).parse();
-        extractedText = (article?.textContent || '').replace(/\s+/g, ' ').trim();
-      } catch (puppeteerErr) {
-        // Fallback to previous extractedText
-      }
-      if (containsBotKeywords(extractedText)) {
-        return { error: 'Unable to extract actual website content due to bot protection.' };
-      }
+    const scraped = await scrapeBlogContent(url);
+    if (scraped.error || !scraped.content || scraped.content.length < 50) {
+      return { error: 'Unable to extract actual website content due to bot protection or insufficient content.' };
     }
+    let auditResult;
+    try {
+      auditResult = await analyzeWithGemini({
+        content: scraped.content,
+        inputType: 'webpage',
+        category,
+        analysisMode
+      });
+    } catch (geminiErr) {
+      return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
+    }
+    return {
+      contentType: 'webpage',
+      originalInput: url,
+      extractedText: scraped.content,
+      transcript: scraped.content,
+      auditResult
+    };
   } catch (error) {
-    extractedText = `Content could not be extracted due to access restrictions or timeouts. URL: ${url}. Please provide text or upload a file for review.`;
+    return { error: 'Content could not be extracted due to access restrictions or timeouts. URL: ' + url + '. Please provide text or upload a file for review.' };
   }
-  if (!extractedText || containsBotKeywords(extractedText)) {
-    return { error: 'Unable to extract actual website content due to bot protection.' };
-  }
-  if (extractedText.length < 50) {
-    return { error: 'Extracted content too short to analyze.' };
-  }
-  let auditResult;
-  try {
-    auditResult = await analyzeWithGemini({
-      content: extractedText,
-      inputType: 'url',
-      category,
-      analysisMode
-    });
-  } catch (geminiErr) {
-    return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
-  }
-  return {
-    contentType: 'webpage',
-    originalInput: url,
-    extractedText,
-    transcript: extractedText,
-    auditResult
-  };
 };
 
 export const processContent = async (input, options = {}) => {
@@ -583,20 +543,24 @@ export const processContent = async (input, options = {}) => {
           analysisMode
         });
         const cleaned = sanitizeGeminiResponse(rawGeminiOutput);
-        try {
-          auditResult = JSON.parse(cleaned);
-        } catch (err) {
-          console.error('Gemini JSON Parse Error:');
-          console.error('Raw Output:', rawGeminiOutput);
-          auditResult = {
-            score: 0,
-            status: 'Needs Review',
-            summary: 'AI response parsing failed.',
-            transcription: '',
-            financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
-            ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
-            violations: []
-          };
+        if (typeof cleaned === 'object') {
+          auditResult = cleaned;
+        } else {
+          try {
+            auditResult = JSON.parse(cleaned);
+          } catch (err) {
+            console.error('Gemini JSON Parse Error:');
+            console.error('Raw Output:', rawGeminiOutput);
+            auditResult = {
+              score: 0,
+              status: 'Needs Review',
+              summary: 'AI response parsing failed.',
+              transcription: '',
+              financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
+              ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
+              violations: []
+            };
+          }
         }
       } catch (err) {
         auditResult = {
@@ -646,7 +610,20 @@ export const processContent = async (input, options = {}) => {
     auditResult: processingResult.auditResult
   });
 
-  return processingResult.auditResult;
+  // Always return a valid audit object
+  if (processingResult && processingResult.auditResult) {
+    return processingResult.auditResult;
+  }
+  // Fallback: never return null/undefined
+  return {
+    score: 0,
+    status: 'Needs Review',
+    summary: 'Audit failed.',
+    transcription: '',
+    financialPenalty: { riskLevel: 'Unknown', description: 'Could not evaluate.' },
+    ethicalMarketing: { score: 0, assessment: 'Could not evaluate.' },
+    violations: []
+  };
 };
 
 export default { processContent };
