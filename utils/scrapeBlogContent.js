@@ -9,44 +9,71 @@ import { Readability } from '@mozilla/readability';
  */
 export async function scrapeBlogContent(url) {
   console.log('[Scraping] Attempt started:', url);
+  // Validate URL
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    console.error('[Scraping] Failed: Invalid URL format');
+    return { error: true, message: 'Invalid URL format' };
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000); // 10s timeout
+  let response;
   try {
-    const response = await fetch(url, {
+    response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; SatarkAI/1.0; +https://nextcomplyai.com/bot)'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
       },
       signal: controller.signal
     });
-    if (!response.ok) {
-      const msg = `[Scraping] Failed: HTTP ${response.status}`;
-      console.error(msg);
-      throw new Error(response.status === 403 ? 'Access denied or bot protection' : `Failed to fetch: HTTP ${response.status}`);
-    }
-    const html = await response.text();
-    const dom = new JSDOM(html, { url });
-    const reader = new Readability(dom.window.document);
-    const article = reader.parse();
-    if (!article || !article.textContent || !article.title) {
-      console.error('[Scraping] Failed: No readable content');
-      throw new Error('No readable article content found');
-    }
-    const content = article.textContent.trim();
-    const title = article.title.trim();
-    if (!content) {
-      console.error('[Scraping] Failed: Empty content');
-      throw new Error('Extracted content is empty');
-    }
-    console.log('[Scraping] Success:', title);
-    return { title, content };
   } catch (err) {
-    if (err.name === 'AbortError') {
-      console.error('[Scraping] Failed: Timeout');
-      throw new Error('Scraping timed out (10s limit)');
-    }
-    console.error('[Scraping] Failed:', err.message);
-    throw new Error(`Scraping failed: ${err.message}`);
-  } finally {
     clearTimeout(timeout);
+    console.error('[Scraping] Failed: Fetch error', err.message);
+    return { error: true, message: 'Fetch failed: ' + err.message };
   }
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    console.error(`[Scraping] Failed: HTTP ${response.status}`);
+    let msg = response.status === 403 ? 'Access denied or bot protection' : `Fetch failed with status ${response.status}`;
+    return { error: true, message: msg };
+  }
+
+  let html;
+  try {
+    html = await response.text();
+  } catch (err) {
+    console.error('[Scraping] Failed: Unable to read HTML', err.message);
+    return { error: true, message: 'Unable to read HTML: ' + err.message };
+  }
+
+  let dom, article;
+  try {
+    dom = new JSDOM(html, { url });
+    const reader = new Readability(dom.window.document);
+    article = reader.parse();
+  } catch (err) {
+    console.error('[Scraping] Failed: JSDOM/Readability error', err.message);
+    return { error: true, message: 'Unable to parse content: ' + err.message };
+  }
+
+  if (!article || !article.textContent || article.textContent.trim().length < 50) {
+    console.error('[Scraping] Failed: No readable content found');
+    return { error: true, message: 'Unable to extract readable content' };
+  }
+
+  // Limit content length
+  let content = article.textContent.trim();
+  if (content.length > 80000) {
+    content = content.slice(0, 80000);
+  }
+
+  console.log('[Scraping] Success:', url);
+  return {
+    title: article.title || '',
+    content
+  };
 }

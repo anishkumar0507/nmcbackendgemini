@@ -30,10 +30,9 @@ router.post('/', async (req, res) => {
 
     let extracted = null;
     if (url) {
-      try {
-        extracted = await scrapeBlogContent(url);
-      } catch (scrapeErr) {
-        return res.status(400).json({ error: scrapeErr.message || 'Failed to scrape blog content' });
+      extracted = await scrapeBlogContent(url);
+      if (extracted && extracted.error) {
+        return res.status(400).json({ error: extracted.message });
       }
     }
     res.json({

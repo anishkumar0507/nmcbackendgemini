@@ -135,51 +135,37 @@ export const auditBlogController = async (req, res) => {
       return res.status(500).json({ success: false, error: 'Gemini API call failed' });
     }
 
-    // Null/structure checks
-    if (!geminiResponse || !geminiResponse.candidates || !Array.isArray(geminiResponse.candidates) ||
-        !geminiResponse.candidates[0] || !geminiResponse.candidates[0].content ||
-        !geminiResponse.candidates[0].content.parts || !Array.isArray(geminiResponse.candidates[0].content.parts) ||
-        !geminiResponse.candidates[0].content.parts[0] ||
-        typeof geminiResponse.candidates[0].content.parts[0].text !== 'string') {
-      return res.status(500).json({ success: false, error: 'Invalid Gemini response structure' });
+    // SAFE Gemini response handling
+    if (geminiResponse == null) {
+      console.error('[Gemini] Empty response');
+      return res.status(500).json({ success: false, error: 'Gemini returned empty response' });
     }
 
-    const rawText = geminiResponse.candidates[0].content.parts[0].text;
-    console.log('[Gemini] Raw response:', rawText);
-    let parsed;
-    try {
-      parsed = JSON.parse(rawText);
-      return res.json({
-        success: true,
-        type: 'blog',
-        title,
-        metaDescription,
-        headings,
-        wordCount,
-        internalLinks,
-        externalLinks,
-        content,
-        gemini: parsed
-      });
-    } catch (err) {
-      // If not valid JSON, fallback: return as plain text
-      if (rawText && typeof rawText === 'string') {
-        return res.json({
-          success: true,
-          type: 'blog',
-          title,
-          metaDescription,
-          headings,
-          wordCount,
-          internalLinks,
-          externalLinks,
-          content,
-          gemini: { data: rawText }
-        });
-      } else {
-        return res.status(500).json({ success: false, error: 'Invalid JSON from Gemini' });
+    let parsedGemini;
+    if (typeof geminiResponse === 'object') {
+      parsedGemini = geminiResponse;
+    } else if (typeof geminiResponse === 'string') {
+      try {
+        parsedGemini = JSON.parse(geminiResponse);
+      } catch (err) {
+        parsedGemini = { data: geminiResponse };
       }
+    } else {
+      return res.status(500).json({ success: false, error: 'Unexpected Gemini response format' });
     }
+
+    return res.json({
+      success: true,
+      type: 'blog',
+      title,
+      metaDescription,
+      headings,
+      wordCount,
+      internalLinks,
+      externalLinks,
+      content,
+      gemini: parsedGemini
+    });
   } catch (err) {
     return res.status(500).json({ success: false, message: 'Failed to audit blog' });
   }
