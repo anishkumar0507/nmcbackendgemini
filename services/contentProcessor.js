@@ -34,15 +34,64 @@ const validateInputSize = (input, type) => {
 };
 
 export const detectContentType = (input) => {
-  if (input.text) return 'text';
-  if (input.url) return 'url';
+  if (input.text) {
+    console.log('[Content Detection] Type detected: text');
+    return 'text';
+  }
+  if (input.url) {
+    console.log('[Content Detection] Type detected: url');
+    return 'url';
+  }
   if (input.file) {
     const mimetype = input.file?.mimetype || '';
-    if (mimetype.startsWith('image/')) return 'image';
-    if (mimetype.startsWith('video/')) return 'video';
-    if (mimetype.startsWith('audio/')) return 'audio';
+    if (mimetype) {
+      if (mimetype.startsWith('image/')) {
+        console.log('[Content Detection] Type detected: image');
+        return 'image';
+      }
+      if (mimetype.startsWith('video/')) {
+        console.log('[Content Detection] Type detected: video');
+        return 'video';
+      }
+      if (mimetype.startsWith('audio/')) {
+        console.log('[Content Detection] Type detected: audio');
+        return 'audio';
+      }
+      if ([
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'text/plain'
+      ].includes(mimetype)) {
+        console.log('[Content Detection] Type detected:', mimetype);
+        return 'document';
+      }
+    }
+    // Fallback to file extension
+    const ext = input.file?.originalname?.split('.').pop()?.toLowerCase() || '';
+    if (ext) {
+      if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+        console.log('[Content Detection] Fallback used: image');
+        return 'image';
+      }
+      if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'm4v'].includes(ext)) {
+        console.log('[Content Detection] Fallback used: video');
+        return 'video';
+      }
+      if (['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma'].includes(ext)) {
+        console.log('[Content Detection] Fallback used: audio');
+        return 'audio';
+      }
+      if (['pdf', 'doc', 'docx', 'txt'].includes(ext)) {
+        console.log('[Content Detection] Fallback used: document');
+        return 'document';
+      }
+    }
+    console.log('[Content Detection] Fallback used: unknown');
+    return 'unknown';
   }
-  throw new Error('Unable to detect content type');
+  console.log('[Content Detection] Fallback used: unknown');
+  return 'unknown';
 };
 
 const isYouTubeUrl = (url) => {
@@ -435,8 +484,32 @@ export const processContent = async (input, options = {}) => {
       category,
       analysisMode
     });
+  } else if (contentType === 'document') {
+    // Add document processing logic here if needed
+    processingResult = {
+      contentType: 'document',
+      originalInput: input.file.originalname || 'uploaded document',
+      extractedText: null,
+      transcript: null,
+      auditResult: { error: 'Document processing not implemented yet.' }
+    };
+  } else if (contentType === 'unknown') {
+    console.error('[Content Detection] Unable to detect content type');
+    processingResult = {
+      contentType: 'unknown',
+      originalInput: input.file?.originalname || 'unknown input',
+      extractedText: null,
+      transcript: null,
+      auditResult: { error: 'Unable to detect content type. Please upload a supported file.' }
+    };
   } else {
-    throw new Error('Unsupported input type');
+    processingResult = {
+      contentType: 'unsupported',
+      originalInput: input.file?.originalname || 'unsupported input',
+      extractedText: null,
+      transcript: null,
+      auditResult: { error: 'Unsupported input type.' }
+    };
   }
 
   await saveAuditRecord({

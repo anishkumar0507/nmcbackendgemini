@@ -75,30 +75,61 @@ async function normalizeAudio(inputPath) {
 
 async function youtubeAuditPipeline(url) {
   if (!isYouTubeUrl(url)) {
-    throw new Error('URL is not a valid YouTube video');
+    return { error: 'URL is not a valid YouTube video' };
   }
   let videoId, tempFile, normalizedFile;
   try {
     videoId = extractVideoId(url);
-    const { tempFile: downloadedFile, duration } = await downloadAudio(videoId);
-    tempFile = downloadedFile;
-    normalizedFile = await normalizeAudio(tempFile);
-    const audioBuffer = fs.readFileSync(normalizedFile);
-    if (audioBuffer.length > MAX_AUDIO_SIZE) {
-      throw new Error('Audio file exceeds 25MB limit');
+    // Try YouTube transcript first
+    let transcript = null;
+    try {
+      // Placeholder: Replace with actual transcript fetch logic
+      // transcript = await fetchYouTubeTranscript(videoId);
+      transcript = null; // Simulate transcript disabled
+    } catch (transcriptErr) {
+      console.log('[YouTube] Transcript disabled');
     }
-    console.log('[OpenAI] Transcription started');
-    const transcriptResult = await transcribe(audioBuffer, 'audio/mp3');
-    console.log('[OpenAI] Transcription completed');
-    console.log('[Gemini] Audit started');
-    const auditResult = await analyzeWithGemini({ content: transcriptResult.transcript, inputType: 'audio' });
-    console.log('[Gemini] Audit completed');
-    return {
-      transcript: transcriptResult.transcript,
-      audit: auditResult,
-      model: transcriptResult.model,
-      processingTime: transcriptResult.processingTime
-    };
+    if (!transcript) {
+      console.log('[YouTube] Transcript disabled');
+      // Fallback to audio transcription
+      const { tempFile: downloadedFile, duration } = await downloadAudio(videoId);
+      tempFile = downloadedFile;
+      normalizedFile = await normalizeAudio(tempFile);
+      const audioBuffer = fs.readFileSync(normalizedFile);
+      if (audioBuffer.length > MAX_AUDIO_SIZE) {
+        throw new Error('Audio file exceeds 25MB limit');
+      }
+      console.log('[OpenAI] Transcription started');
+      const transcriptResult = await transcribe(audioBuffer, 'audio/mp3');
+      console.log('[OpenAI] Transcription completed');
+      transcript = transcriptResult.transcript;
+      if (!transcript || transcript.length < 50) {
+        return { error: 'Transcript too short or empty. Unable to audit.', transcriptLength: transcript.length };
+      }
+      console.log('[Gemini] Audit started');
+      const auditResult = await analyzeWithGemini({ content: transcript, inputType: 'audio' });
+      console.log('[Gemini] Audit completed');
+      return {
+        transcript,
+        audit: auditResult,
+        model: transcriptResult.model,
+        processingTime: transcriptResult.processingTime
+      };
+    } else {
+      // If transcript exists and is valid
+      if (transcript.length < 50) {
+        return { error: 'Transcript too short or empty. Unable to audit.', transcriptLength: transcript.length };
+      }
+      console.log('[Gemini] Audit started');
+      const auditResult = await analyzeWithGemini({ content: transcript, inputType: 'audio' });
+      console.log('[Gemini] Audit completed');
+      return {
+        transcript,
+        audit: auditResult,
+        model: 'youtube-transcript',
+        processingTime: null
+      };
+    }
   } catch (err) {
     console.error('[YouTube Pipeline] Error:', err.message);
     return {
