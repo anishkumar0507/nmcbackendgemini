@@ -30,26 +30,48 @@ export const analyzeCompatibility = async (req, res) => {
       input.file = file;
     }
 
-    // Run audit
+    // Run Gemini audit
     const geminiResponse = await processContent(input, {
       userId: req.user.id,
       category,
       analysisMode
     });
 
-    // STRICT: Explicitly derive required fields
-    const detectedType = input.url ? 'url' : (input.text ? 'text' : null);
-    const contentType = detectedType || req.body.contentType || (req.body.url ? 'url' : req.body.text ? 'text' : null);
-    const originalInput = req.body.url || req.body.text || req.body.input || null;
-    const safeGeminiResult = geminiResponse && typeof geminiResponse === 'object' ? geminiResponse : null;
-    const auditResult = safeGeminiResult || geminiResponse || null;
+    // SAFE handling for Gemini response
+    if (!geminiResponse) {
+      console.error('Gemini returned empty response');
+      return res.status(400).json({
+        success: false,
+        error: 'Gemini returned empty response'
+      });
+    }
 
-    // HARD validation BEFORE save
-    if (!contentType || !originalInput || !auditResult) {
+    let safeGeminiResult;
+    if (typeof geminiResponse === 'object') {
+      safeGeminiResult = geminiResponse;
+    } else if (typeof geminiResponse === 'string') {
+      try {
+        safeGeminiResult = JSON.parse(geminiResponse);
+      } catch {
+        safeGeminiResult = { data: geminiResponse };
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Unexpected Gemini response format'
+      });
+    }
+
+    // Derive required fields BEFORE saving
+    const contentType = req.body.contentType || (req.body.url ? 'url' : req.body.text ? 'text' : null);
+    const originalInput = req.body.url || req.body.text || null;
+
+    // Strict validation BEFORE save
+    if (!contentType || !originalInput || !safeGeminiResult) {
       console.error('AuditRecord NOT saved - Missing required fields', {
         contentType,
         originalInput,
-        auditResult
+        safeGeminiResult
       });
       return res.status(400).json({
         success: false,
@@ -63,18 +85,17 @@ export const analyzeCompatibility = async (req, res) => {
       user: req.user?._id || null,
       contentType,
       originalInput,
-      auditResult,
+      auditResult: safeGeminiResult,
       createdAt: new Date()
     });
     console.log('AuditRecord saved successfully:', savedRecord._id);
 
-    return res.json(auditResult);
+    return res.json(safeGeminiResult);
   } catch (error) {
     console.error('Error in analyzeCompatibility:', error);
     return res.status(500).json({
       success: false,
-      error: 'Internal server error',
-      details: error.message
+      error: error.message
     });
   }
 };
