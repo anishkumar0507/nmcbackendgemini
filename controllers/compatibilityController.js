@@ -12,7 +12,7 @@ export const analyzeCompatibility = async (req, res) => {
     // Validate input
     if (!content && !file) {
       return res.status(400).json({
-        ok: false,
+        success: false,
         error: 'Content or file is required'
       });
     }
@@ -30,42 +30,51 @@ export const analyzeCompatibility = async (req, res) => {
       input.file = file;
     }
 
-    const auditResult = await processContent(input, {
+    // Run audit
+    const geminiResponse = await processContent(input, {
       userId: req.user.id,
       category,
       analysisMode
     });
 
-    // Defensive: ensure required fields for AuditRecord
-    const contentType = input.url ? 'url' : (input.text ? 'text' : (file ? file.mimetype?.split('/')[0] : undefined));
-    const originalInput = input.url || input.text || (file ? file.originalname : undefined);
+    // Explicitly define required fields
+    const detectedType = input.url ? 'url' : (input.text ? 'text' : (file ? file.mimetype?.split('/')[0] : undefined));
+    const contentType = detectedType || 'unknown';
+    const url = input.url;
+    const text = input.text;
+    const originalInput = url || text || req.body.input || (file ? file.originalname : null);
+    const safeGeminiResult = geminiResponse && typeof geminiResponse === 'object' ? geminiResponse : null;
+    const auditResult = safeGeminiResult || geminiResponse || null;
 
+    // Defensive validation BEFORE save
     if (!contentType || !originalInput || !auditResult) {
+      console.error('Missing required fields for AuditRecord save', {
+        contentType,
+        originalInput,
+        auditResult
+      });
       return res.status(400).json({
-        ok: false,
-        error: 'Missing required fields for audit record',
-        details: { contentType, originalInput, auditResult }
+        success: false,
+        error: 'Missing required audit data'
       });
     }
 
     // Lazy import to avoid circular deps
     const AuditRecord = (await import('../models/AuditRecord.js')).default;
-    const record = new AuditRecord({
-      userId: req.user.id,
+    await AuditRecord.create({
+      user: req.user?._id || null,
       contentType,
       originalInput,
-      extractedText: '',
-      transcript: '',
-      auditResult
+      auditResult,
+      createdAt: new Date()
     });
-    await record.save();
-    console.log('[AuditRecord] Saved successfully:', record._id);
+    console.log('AuditRecord saved successfully');
 
     return res.json(auditResult);
   } catch (error) {
     console.error('Error in analyzeCompatibility:', error);
     return res.status(500).json({
-      ok: false,
+      success: false,
       error: 'Internal server error',
       details: error.message
     });
