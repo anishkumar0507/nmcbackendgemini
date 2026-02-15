@@ -30,20 +30,35 @@ export const analyzeCompatibility = async (req, res) => {
       input.file = file;
     }
 
-    // Run Gemini audit
+    // If URL is provided, scrape readable content using Mozilla Readability
+    if (req.body.url) {
+      try {
+        const { scrapeBlogContent } = await import('../utils/scrapeBlogContent.js');
+        const scrapeResult = await scrapeBlogContent(req.body.url);
+        if (scrapeResult.error) {
+          return res.status(400).json({ success: false, error: scrapeResult.message });
+        }
+        return res.json({
+          success: true,
+          title: scrapeResult.title,
+          content: scrapeResult.content
+        });
+      } catch (err) {
+        console.error('Scraping failed:', err);
+        return res.status(500).json({ success: false, error: 'Scraping failed', details: err.message });
+      }
+    }
+
+    // ...existing Gemini audit logic for non-URL cases...
     const geminiResponse = await processContent(input, {
       userId: req.user.id,
       category,
       analysisMode
     });
 
-    // SAFE handling for Gemini response
     if (!geminiResponse) {
       console.error('Gemini returned empty response');
-      return res.status(400).json({
-        success: false,
-        error: 'Gemini returned empty response'
-      });
+      return res.status(400).json({ success: false, error: 'Gemini returned empty response' });
     }
 
     let safeGeminiResult;
@@ -56,30 +71,21 @@ export const analyzeCompatibility = async (req, res) => {
         safeGeminiResult = { data: geminiResponse };
       }
     } else {
-      return res.status(400).json({
-        success: false,
-        error: 'Unexpected Gemini response format'
-      });
+      return res.status(400).json({ success: false, error: 'Unexpected Gemini response format' });
     }
 
-    // Derive required fields BEFORE saving
     const contentType = req.body.contentType || (req.body.url ? 'url' : req.body.text ? 'text' : null);
     const originalInput = req.body.url || req.body.text || null;
 
-    // Strict validation BEFORE save
     if (!contentType || !originalInput || !safeGeminiResult) {
       console.error('AuditRecord NOT saved - Missing required fields', {
         contentType,
         originalInput,
         safeGeminiResult
       });
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required audit data'
-      });
+      return res.status(400).json({ success: false, error: 'Missing required audit data' });
     }
 
-    // Lazy import to avoid circular deps
     const AuditRecord = (await import('../models/AuditRecord.js')).default;
     const savedRecord = await AuditRecord.create({
       user: req.user?._id || null,
