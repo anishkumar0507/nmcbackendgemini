@@ -1,5 +1,6 @@
 // Utility for extracting text from PDF and DOCX
-import pdfParse from 'pdf-parse';
+import pdfParseModule from 'pdf-parse';
+const pdfParse = pdfParseModule.default || pdfParseModule;
 import mammoth from 'mammoth';
 
 /**
@@ -7,12 +8,21 @@ import mammoth from 'mammoth';
  * @param {Buffer} buffer
  * @returns {Promise<string>} Extracted text
  */
+
 export async function extractPdfText(buffer) {
   try {
     const data = await pdfParse(buffer);
-    return (data.text || '').trim();
+    return {
+      error: false,
+      text: (data.text || '').trim(),
+      message: 'PDF parsed successfully'
+    };
   } catch (err) {
-    return '';
+    return {
+      error: true,
+      text: '',
+      message: 'PDF parsing failed'
+    };
   }
 }
 
@@ -21,11 +31,20 @@ export async function extractPdfText(buffer) {
  * @param {Buffer} buffer
  * @returns {Promise<string>} Extracted text
  */
+
 export async function extractDocxText(buffer) {
   try {
     const result = await mammoth.extractRawText({ buffer });
-    return (result.value || '').trim();
+    return {
+      error: false,
+      text: (result.value || '').trim(),
+      message: 'DOCX parsed successfully'
+    };
   } catch (err) {
-    return '';
+    return {
+      error: true,
+      text: '',
+      message: 'DOCX parsing failed'
+    };
   }
 }
