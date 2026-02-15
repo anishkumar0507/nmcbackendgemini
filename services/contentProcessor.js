@@ -8,7 +8,9 @@ function sanitizeGeminiResponse(raw) {
     .replace(/json/g, '')
     .trim();
 }
-import { scrapeBlogContent } from './scrapeBlogContent.js';
+import { JSDOM } from 'jsdom';
+import { Readability } from '@mozilla/readability';
+import { downloadYouTubeAudio } from './youtubeAudioDownloader.js';
 import { transcribe } from './transcriptionService.js';
 import { performAudit, performMultimodalAudit } from './auditService.js';
 import fs from 'fs';
@@ -383,47 +385,36 @@ const processImageBuffer = async ({ buffer, originalInput, category, analysisMod
 };
 
 const processUrl = async ({ url, category, analysisMode }) => {
-  const urlType = detectUrlContentType(url);
-
-  // === ISSUE 1: YouTube Transcript Disabled Handling ===
   if (isYouTubeUrl(url)) {
+    // YOUTUBE FLOW
     let transcriptText = '';
-    let usedAudioFallback = false;
     try {
       transcriptText = await fetchYouTubeTranscript(url);
     } catch (error) {
-      console.log('[YouTube] Transcript disabled');
-      // Do NOT use metadata fallback. Trigger audio transcription fallback.
+      // Fallback: Download audio and transcribe
       try {
-        console.log('[YouTube] Downloading audio');
         const tempDir = '/tmp';
-        const maxDurationSec = 600; // 10 minutes
-        const maxSizeBytes = 25 * 1024 * 1024; // 25MB
+        const maxDurationSec = 600;
+        const maxSizeBytes = 25 * 1024 * 1024;
         const { filePath, error: audioError } = await downloadYouTubeAudio(url, tempDir, maxDurationSec, maxSizeBytes);
         if (audioError) {
-          return { error: audioError };
+          return { error: 'Unable to download YouTube audio.' };
         }
-        // Transcribe audio
         let transcriptResult;
         try {
           transcriptResult = await transcribe(fs.readFileSync(filePath), 'audio/mp3');
         } catch (transcribeErr) {
           fs.unlinkSync(filePath);
-          return { error: 'Audio transcription failed: ' + (transcribeErr.message || transcribeErr) };
+          return { error: 'Unable to transcribe YouTube audio.' };
         }
         fs.unlinkSync(filePath);
         transcriptText = transcriptResult.transcript;
-        usedAudioFallback = true;
-        if (!transcriptText || transcriptText.length < 50) {
-          return { error: 'Transcription too short or empty.' };
-        }
-        console.log('[YouTube] Transcription success');
       } catch (audioFallbackErr) {
-        return { error: 'YouTube audio fallback failed: ' + (audioFallbackErr.message || audioFallbackErr) };
+        return { error: 'Unable to transcribe YouTube audio.' };
       }
     }
-    if (!transcriptText || transcriptText.length < 50) {
-      return { error: 'Transcript unavailable or too short.' };
+    if (!transcriptText || typeof transcriptText !== 'string' || transcriptText.trim().length < 50) {
+      return { error: 'Extracted content is empty.' };
     }
     let auditResult;
     try {
@@ -433,7 +424,6 @@ const processUrl = async ({ url, category, analysisMode }) => {
         category,
         analysisMode
       });
-      console.log('[YouTube] Gemini audit success');
     } catch (geminiErr) {
       return { error: 'Gemini audit failed: ' + (geminiErr.message || geminiErr) };
     }
@@ -444,19 +434,33 @@ const processUrl = async ({ url, category, analysisMode }) => {
       transcript: transcriptText,
       auditResult
     };
-  }
-
-  // === ISSUE 2: Blog URL Bot Protection (403) ===
-  // Use robust blog scraping utility
-  try {
-    const scraped = await scrapeBlogContent(url);
-    if (scraped.error || !scraped.content || scraped.content.length < 50) {
-      return { error: 'Unable to extract actual website content due to bot protection or insufficient content.' };
+  } else {
+    // STRICT URL SCRAPING FLOW (Non-YouTube)
+    let articleText = '';
+    try {
+      const fetchFn = typeof globalThis.fetch === 'function' ? globalThis.fetch : (await import('node-fetch')).default;
+      const response = await fetchFn(url, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' } });
+      if (!response.ok) {
+        return { error: 'No readable content found.' };
+      }
+      const html = await response.text();
+      const dom = new JSDOM(html, { url });
+      const reader = new Readability(dom.window.document);
+      const article = reader.parse();
+      if (!article || !article.textContent || article.textContent.trim().length < 50) {
+        return { error: 'No readable content found.' };
+      }
+      articleText = article.textContent.trim();
+    } catch (err) {
+      return { error: 'No readable content found.' };
+    }
+    if (!articleText || typeof articleText !== 'string' || articleText.trim().length < 50) {
+      return { error: 'No readable content found.' };
     }
     let auditResult;
     try {
       auditResult = await analyzeWithGemini({
-        content: scraped.content,
+        content: articleText,
         inputType: 'webpage',
         category,
         analysisMode
@@ -467,12 +471,10 @@ const processUrl = async ({ url, category, analysisMode }) => {
     return {
       contentType: 'webpage',
       originalInput: url,
-      extractedText: scraped.content,
-      transcript: scraped.content,
+      extractedText: articleText,
+      transcript: articleText,
       auditResult
     };
-  } catch (error) {
-    return { error: 'Content could not be extracted due to access restrictions or timeouts. URL: ' + url + '. Please provide text or upload a file for review.' };
   }
 };
 
